@@ -291,6 +291,7 @@ class Github extends Controller
             }
             if ($x_github_event === 'push') {
                 $id = data_get($payload, 'repository.id');
+                $full_name = data_get($payload, 'repository.full_name');
                 $branch = data_get($payload, 'ref');
                 if (Str::isMatch('/refs\/heads\/*/', $branch)) {
                     $branch = Str::after($branch, 'refs/heads/');
@@ -303,6 +304,7 @@ class Github extends Controller
             if ($x_github_event === 'pull_request') {
                 $action = data_get($payload, 'action');
                 $id = data_get($payload, 'repository.id');
+                $full_name = data_get($payload, 'repository.full_name');
                 $pull_request_id = data_get($payload, 'number');
                 $pull_request_html_url = data_get($payload, 'pull_request.html_url');
                 $branch = data_get($payload, 'pull_request.head.ref');
@@ -311,7 +313,7 @@ class Github extends Controller
             if (! $id || ! $branch) {
                 return response('Nothing to do. No id or branch found.');
             }
-            $applications = Application::where('repository_project_id', $id)->whereRelation('source', 'is_public', false);
+            $applications = Application::where('git_repository', 'like', "%$full_name%");
             if ($x_github_event === 'push') {
                 $applications = $applications->where('git_branch', $branch)->get();
                 if ($applications->isEmpty()) {
