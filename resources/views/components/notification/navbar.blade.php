@@ -28,6 +28,11 @@
                 href="{{ route('notifications.pushover') }}">
                 <button>Pushover</button>
             </a>
+            <a class="{{ request()->routeIs('notifications.webhook') ? 'dark:text-white' : '' }}"
+                wire:navigate
+                href="{{ route('notifications.webhook') }}">
+                <button>Webhook</button>
+            </a>
         </nav>
     </div>
 </div>

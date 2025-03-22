@@ -7,6 +7,7 @@ use App\Notifications\Channels\EmailChannel;
 use App\Notifications\Channels\PushoverChannel;
 use App\Notifications\Channels\SlackChannel;
 use App\Notifications\Channels\TelegramChannel;
+use App\Notifications\Channels\WebhookChannel;
 use Illuminate\Database\Eloquent\Model;
 
 trait HasNotificationSettings
@@ -29,6 +30,7 @@ trait HasNotificationSettings
             'telegram' => $this->telegramNotificationSettings,
             'slack' => $this->slackNotificationSettings,
             'pushover' => $this->pushoverNotificationSettings,
+            'webhook' => $this->webhookNotificationSettings,
             default => null,
         };
     }
@@ -50,6 +52,13 @@ trait HasNotificationSettings
     {
         $settings = $this->getNotificationSettings($channel);
 
+        \Log::debug("Checking if notification type '$event' is enabled for channel '$channel'", [
+            'team_id' => $this->id ?? null,
+            'settings_exists' => $settings ? 'yes' : 'no',
+            'notification_enabled' => $settings && $this->isNotificationEnabled($channel) ? 'yes' : 'no',
+            'in_always_send' => in_array($event, $this->alwaysSendEvents) ? 'yes' : 'no',
+        ]);
+
         if (! $settings || ! $this->isNotificationEnabled($channel)) {
             return false;
         }
@@ -59,8 +68,15 @@ trait HasNotificationSettings
         }
 
         $settingKey = "{$event}_{$channel}_notifications";
+        $isEnabled = isset($settings->$settingKey) ? (bool) $settings->$settingKey : false;
 
-        return (bool) $settings->$settingKey;
+        \Log::debug('Notification type check result', [
+            'setting_key' => $settingKey,
+            'exists' => isset($settings->$settingKey) ? 'yes' : 'no',
+            'is_enabled' => $isEnabled ? 'yes' : 'no',
+        ]);
+
+        return $isEnabled;
     }
 
     /**
@@ -76,14 +92,28 @@ trait HasNotificationSettings
             'telegram' => TelegramChannel::class,
             'slack' => SlackChannel::class,
             'pushover' => PushoverChannel::class,
+            'webhook' => WebhookChannel::class,
         ];
+
+        \Log::debug("Getting enabled channels for event '$event'", [
+            'team_id' => $this->id ?? null,
+            'always_send' => in_array($event, $this->alwaysSendEvents) ? 'yes' : 'no',
+        ]);
 
         if ($event === 'general') {
             unset($channelMap['email']);
         }
 
         foreach ($channelMap as $channel => $channelClass) {
-            if ($this->isNotificationEnabled($channel) && $this->isNotificationTypeEnabled($channel, $event)) {
+            $isEnabled = $this->isNotificationEnabled($channel) && $this->isNotificationTypeEnabled($channel, $event);
+
+            \Log::debug("Channel '$channel' status for event '$event'", [
+                'is_enabled' => $isEnabled ? 'yes' : 'no',
+                'notification_enabled' => $this->isNotificationEnabled($channel) ? 'yes' : 'no',
+                'notification_type_enabled' => $this->isNotificationTypeEnabled($channel, $event) ? 'yes' : 'no',
+            ]);
+
+            if ($isEnabled) {
                 $channels[] = $channelClass;
             }
         }

@@ -8,6 +8,7 @@ use App\Notifications\CustomEmailNotification;
 use App\Notifications\Dto\DiscordMessage;
 use App\Notifications\Dto\PushoverMessage;
 use App\Notifications\Dto\SlackMessage;
+use App\Notifications\Dto\WebhookMessage;
 use Illuminate\Notifications\Messages\MailMessage;
 
 class DeploymentFailed extends CustomEmailNotification
@@ -184,5 +185,67 @@ class DeploymentFailed extends CustomEmailNotification
             description: $description,
             color: SlackMessage::errorColor()
         );
+    }
+
+    public function toWebhook(): WebhookMessage
+    {
+        $metadata = [
+            'project_uuid' => $this->project_uuid,
+            'environment_uuid' => $this->environment_uuid,
+            'application_uuid' => $this->application->uuid,
+            'deployment_uuid' => $this->deployment_uuid,
+
+            'project' => data_get($this->application, 'environment.project.name'),
+            'environment' => $this->environment_name,
+            'application' => $this->application_name,
+
+            'git_repository' => $this->application->git_repository,
+            'git_branch' => $this->application->git_branch,
+            'git_full_url' => $this->application->git_full_url,
+        ];
+
+        // Try to get the actual deployment commit details
+        $deploymentQueue = \App\Models\ApplicationDeploymentQueue::where('deployment_uuid', $this->deployment_uuid)->first();
+        \Log::info('WebhookNotification: Looking up deployment details', [
+            'deployment_uuid' => $this->deployment_uuid,
+            'found_deployment' => $deploymentQueue ? 'yes' : 'no',
+            'commit' => $deploymentQueue->commit ?? 'not found',
+            'commit_message' => $deploymentQueue->commit_message ?? 'not found',
+        ]);
+
+        $metadata['commit_sha'] = $deploymentQueue->commit ?? null;
+        $metadata['commit_id'] = $deploymentQueue->commit ? substr($deploymentQueue->commit, 0, 7) : null;
+        $metadata['commit_message'] = $deploymentQueue->commit_message ?? null;
+
+        if ($this->preview) {
+            $title = "Pull request #{$this->preview->pull_request_id} deployment failed";
+            $description = "Pull request deployment failed for {$this->application_name}";
+
+            if ($this->preview->fqdn) {
+                $metadata['preview_url'] = $this->preview->fqdn;
+            }
+
+            $metadata['pull_request_id'] = $this->preview->pull_request_id;
+        } else {
+            $title = 'Deployment failed';
+            $description = "Deployment failed for {$this->application_name}";
+
+            if ($this->fqdn) {
+                $metadata['application_url'] = $this->fqdn;
+            }
+        }
+
+        $message = new WebhookMessage(
+            title: $title,
+            description: $description,
+            status: WebhookMessage::failure(),
+            metadata: $metadata,
+            isCritical: true
+        );
+
+        $message->addField('deployment_logs_url', $this->deployment_url);
+        $message->addField('timestamp', now()->toIso8601String());
+
+        return $message;
     }
 }
